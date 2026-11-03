@@ -171,13 +171,18 @@ companies with the same tools and the same answer key rules, but different
 names and wording, and scores your 3 points only.
 
 ## Homework 3 solution:
-> to students: this is your report, see the homework description.
+
 
 ### My 3 points and rules
-> for each point: why you chose it, your PASS rule in one or two sentences, and the evidence it uses. Quote Fisher where it helps.
+Point 1 — market potential. I chose it because it is Fisher's first filter and cannot be fixed later: a great product in a shrinking market is still a bad investment. PASS when two-year revenue growth (FY2023→FY2025) is at least the industry median growth rate from industry_medians, so a 10% grower in a slow industry can pass while a 15% grower in a fast one fails. Revenue is summed in SQL from orders and the ratio is computed in Python, so the model never does the arithmetic.
+
+Point 4 — sales organisation. I chose it because a sales force never appears in the accounts; the only way to see it is to ask the people who meet it, which is Fisher's scuttlebutt method. PASS when a customer or competitor describes a knowledgeable, responsive, trusted team, and FAIL when the team is described as weak, absent or price-list-only. The agent spends two of its ten interviews on sales_team, and the model only turns each quote into POSITIVE/NEGATIVE while Python maps that to PASS/FAIL.
+
+Point 5 — profit margin. I chose it because a thin margin cannot cushion a bad year, and "worthwhile" only means something relative to the industry. PASS when the FY2025 operating margin — (revenue − cost of sales − selling/admin − R&D) ÷ revenue — is at least the industry median operating margin from industry_medians. Revenue and all three cost lines are summed in SQL and the margin is computed in Python, so no verdict depends on the model doing arithmetic.
 
 ### Design
-> a visualization of your agent design and one paragraph describing it.
+>
+> The router fixes which tool answers which point: sql_query supplies the revenue, costs and industry medians for points 1 and 5, two interview calls ask a customer and a competitor about the sales team for point 4, and list_documents/read_document read all six documents so the model can check management's claims against the numbers. Python computes the ratios and applies the thresholds, while DeepSeek only judges interview polarity, audits the documents and writes the 2–3 sentence summary; three companies run concurrently with retries, timeouts and a rule-only fallback, so results.csv is always written.
 
 ### Results
 > your point score on `public_test`, the companies where your verdicts disagree with the public answers, and why.

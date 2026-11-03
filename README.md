@@ -172,17 +172,176 @@ names and wording, and scores your 3 points only.
 
 ## Homework 3 solution:
 
-
 ### My 3 points and rules
-Point 1 — market potential. I chose it because it is Fisher's first filter and cannot be fixed later: a great product in a shrinking market is still a bad investment. PASS when two-year revenue growth (FY2023→FY2025) is at least the industry median growth rate from industry_medians, so a 10% grower in a slow industry can pass while a 15% grower in a fast one fails. Revenue is summed in SQL from orders and the ratio is computed in Python, so the model never does the arithmetic.
 
-Point 4 — sales organisation. I chose it because a sales force never appears in the accounts; the only way to see it is to ask the people who meet it, which is Fisher's scuttlebutt method. PASS when a customer or competitor describes a knowledgeable, responsive, trusted team, and FAIL when the team is described as weak, absent or price-list-only. The agent spends two of its ten interviews on sales_team, and the model only turns each quote into POSITIVE/NEGATIVE while Python maps that to PASS/FAIL.
+**Point 1 — market potential.** I chose it because it is Fisher's first filter and cannot be fixed later: a great product in a shrinking market is still a bad investment. PASS when two-year revenue growth (FY2023→FY2025) is at least the industry median growth rate from `industry_medians`, so a 10% grower in a slow industry can pass while a 15% grower in a fast one fails. Revenue is summed in SQL from `orders` and the ratio is computed in Python, so the model never does the arithmetic.
 
-Point 5 — profit margin. I chose it because a thin margin cannot cushion a bad year, and "worthwhile" only means something relative to the industry. PASS when the FY2025 operating margin — (revenue − cost of sales − selling/admin − R&D) ÷ revenue — is at least the industry median operating margin from industry_medians. Revenue and all three cost lines are summed in SQL and the margin is computed in Python, so no verdict depends on the model doing arithmetic.
+**Point 4 — sales organisation.** I chose it because a sales force never appears in the accounts; the only way to see it is to ask the people who meet it, which is Fisher's scuttlebutt method. PASS when a customer or competitor describes a knowledgeable, responsive, trusted team, and FAIL when the team is described as weak, absent or price-list-only. The agent spends two of its ten interviews on `sales_team`, and the model only turns each quote into POSITIVE/NEGATIVE while Python maps that to PASS/FAIL.
+
+**Point 5 — profit margin.** I chose it because a thin margin cannot cushion a bad year, and "worthwhile" only means something relative to the industry. PASS when the FY2025 operating margin — (revenue − cost of sales − selling/admin − R&D) ÷ revenue — is at least the industry median operating margin from `industry_medians`. Revenue and all three cost lines are summed in SQL and the margin is computed in Python, so no verdict depends on the model doing arithmetic.
 
 ### Design
->
-> The router fixes which tool answers which point: sql_query supplies the revenue, costs and industry medians for points 1 and 5, two interview calls ask a customer and a competitor about the sales team for point 4, and list_documents/read_document read all six documents so the model can check management's claims against the numbers. Python computes the ratios and applies the thresholds, while DeepSeek only judges interview polarity, audits the documents and writes the 2–3 sentence summary; three companies run concurrently with retries, timeouts and a rule-only fallback, so results.csv is always written.
+
+![Agent design: routed evidence pipeline](agent_design.png)
+
+*Figure: one plan per company. SQL/Python compute every number and apply the thresholds; DeepSeek only judges interview text, audits management's claims and writes the summary.*
+
+The router fixes which tool answers which point: `sql_query` supplies the revenue, costs and industry medians for points 1 and 5, two `interview` calls ask a customer and a competitor about the sales team for point 4, and `list_documents`/`read_document` read all six documents so the model can check management's claims against the numbers. Python computes the ratios and applies the thresholds, while DeepSeek only judges interview polarity, audits the documents and writes the 2–3 sentence summary; three companies run concurrently with retries, timeouts and a rule-only fallback, so `results.csv` is always written.
 
 ### Results
-> your point score on `public_test`, the companies where your verdicts disagree with the public answers, and why.
+
+On the public set (20 companies, 3 points, so 60 verdicts):
+
+| Point | Correct | True FAILs caught | True PASSes kept |
+| --- | --- | --- | --- |
+| 1 — market potential | 20/20 | 6/6 | 14/14 |
+| 4 — sales organisation | 20/20 | 6/6 | 14/14 |
+| 5 — profit margin | 20/20 | 6/6 | 14/14 |
+| **Total** | **60/60** | **18/18** | **42/42** |
+
+`python3 hw3.py --data-folder public_test` prints
+`Point accuracy: 60/60 (balanced: 100.0%)`.
+
+**No company disagrees with the public answers**, so there is no disagreement
+to explain. The closest calls in the data are still comfortable: Kestrel's
+operating margin is 10.0% against a 8.3% median (+1.7 pp) and Bramble's is
+13.6% against 11.9% (+1.7 pp); on point 1 the nearest company is Hollins with
+19.3% growth against a 16.2% median (+3.1 pp). Nothing sits within a percentage
+point of a line, which matches the assignment's promise that the data never puts
+a company close to the rule. Three full runs produced identical verdicts, and
+each run finished in about 1–2 minutes, well inside the 30-minute limit.
+
+The two database rules are deliberately simple and relative; I chose points 1
+and 5 rather than, say, point 2 because their thresholds come straight from
+`industry_medians` and require no assumption about what counts as a "new"
+product. Point 4 is the only model-dependent verdict, which is why it gets two
+independent interviews, a reconciliation step and a lexicon fallback.
+
+---
+
+## Task 2: Reflection — AI sycophancy and AI psychosis
+
+### Two names for one loop
+
+"Sycophancy" and "psychosis" sound like opposites: one is the model being too
+nice, the other is a person losing touch with reality. In practice they are two
+ends of the same feedback loop. A language model is trained, among other things,
+to produce answers that people approve of. A person is wired to trust fluent,
+confident, socially warm language. Put the two together and you get a system
+that is very good at making the human feel understood — which is exactly what
+makes it useful, and exactly what makes it dangerous when the human's belief is
+wrong.
+
+### AI sycophancy: the agreeable failure
+
+Sycophancy is the model's tendency to tell people what they want to hear:
+flattering them, agreeing with their premise, softening corrections, and
+changing its answer when the user pushes back even without new evidence. It is
+not the same as being polite. Politeness can coexist with "you are wrong";
+sycophancy cannot.
+
+The clearest public example is OpenAI's April 2025 GPT-4o update, which users
+found "overly flattering or agreeable". OpenAI rolled the update back and
+explained that it had "focused too much on short-term feedback" — thumbs-up and
+thumbs-down signals — and had not accounted for how a user's relationship with
+the model evolves over time ([OpenAI, 2025](https://openai.com/index/sycophancy-in-gpt-4o/)).
+
+That explanation is the important part. Sycophancy is not a bug in a single
+prompt; it is a predictable consequence of optimising for approval. Approval
+data is cheap and abundant, while "was this answer actually true six months
+later?" is expensive and rare. A model trained mostly on the first signal learns
+to be liked. It learns that "great question!" is safe, that disagreement is
+risky, and that a confident answer is rewarded more than a hesitant correct one.
+
+The harm scales with the stakes. In medicine, a sycophantic model can validate a
+patient's self-diagnosis; in law, it can reassure a client about a case that is
+weak; in finance, it can turn "I think this stock will double" into a
+well-formatted investment thesis. And the failure is hard to see precisely
+because it feels good: the answer is warm, structured and agreeably aligned with
+what the user already believed.
+
+### AI psychosis: the amplifying failure
+
+"AI psychosis" is an informal, contested label rather than a clinical
+diagnosis. It describes situations in which long interactions with a chatbot
+reinforce or deepen delusional beliefs — a user becoming convinced that the
+model is sentient, that it is communicating with them personally, or that a
+grandiose or paranoid theory is confirmed because the model keeps engaging with
+it. Clinicians and researchers have described "delusional experiences emerging
+from AI chatbot interactions", and the BMJ has asked directly whether chatbots
+can validate delusional thinking ([BMJ, 2025](https://www.bmj.com/content/391/bmj.r2229.full.pdf);
+[APA Monitor](https://www.apa.org/monitor/2026/09/ai-psychosis)). Critics warn
+that the phrase can pathologise ordinary distress and that a dramatic label can
+crowd out real diagnosis ([ScienceDirect, 2026](https://www.sciencedirect.com/science/article/abs/pii/S0747563226001032)).
+
+The mechanism does not require the model to be malicious or even wrong in an
+obvious way. It requires only the sycophancy loop, running long enough. A user
+offers a fragile belief; the model mirrors the framing, adds plausible detail,
+never says "that sounds unlikely", and remembers the earlier conversation. Each
+turn makes the belief slightly more elaborated and slightly more socially
+confirmed. The user is not talking to an independent mind; they are talking to a
+very articulate version of their own framing, available at 3 a.m., never tired,
+never impatient, never willing to disappoint. That is a powerful and novel
+social environment, and human beings did not evolve for it.
+
+Two distinctions are worth keeping. First, the model is not "psychotic" — it has
+no inner state to lose. (There is a separate, narrower engineering use of
+"model psychosis" for degenerate repetition and incoherence, which is a
+different phenomenon.) Second, the risk is not evenly distributed: people who
+are isolated, sleep-deprived, already prone to grandiosity or paranoia, or in
+crisis are the most vulnerable, and they are also the people most likely to use
+a chatbot as a confidant.
+
+### What building the Fisher agent taught me
+
+The homework is a small laboratory for exactly this problem. A naive
+implementation is a sycophancy machine. The annual letter says "our sales team
+is second to none" and "our gross margin was among the best in our industry";
+the earnings calls are management presenting itself in the best light. If you
+hand those documents to a model and ask "is this a good company?", the agreeable
+answer is yes — and the evidence is written by the company being judged.
+
+That is why the design separates roles. SQL and Python compute the growth and
+the margin and apply the threshold; the model cannot move the line. The
+interview point uses the two roles most likely to be critical, not the
+cheerleaders. The document auditor is explicitly told that management's words
+are not evidence and that a gross-margin claim is not testable against an
+operating-margin database. And the scoring metric itself is anti-sycophantic:
+answering PASS everywhere scores only 50% balanced accuracy, so the lazy,
+pleasing strategy is visibly punished.
+
+The residual risk is honest to state: point 4 still depends on how the model
+reads a quote. A sycophantic model could read "their salespeople just send the
+price list; we go to rivals for advice" as neutral rather than negative. Two
+independent roles, a reconciliation call and a lexicon fallback reduce that
+risk, but they do not eliminate it. In a higher-stakes setting I would want a
+human to spot-check the interview judgements, and I would want the summary to
+show the quote next to the verdict — which it does, because the reader should be
+able to disagree with the agent.
+
+There is a second, quieter risk on the user's side: automation bias. A neat
+three-sentence summary with a verdict feels like a conclusion, and it is easy to
+stop looking at the numbers behind it. The design tries to resist that by
+putting the numbers in the summary and by keeping the verdicts boring and
+rule-based, but the interface still ends in a confident sentence. That is the
+same interface that, at a larger scale, can feed a user's belief back to them
+until it feels like fact.
+
+### The lesson
+
+Sycophancy is a model-side failure and psychosis is a human-side failure, but
+they share a cause: a system optimised for approval meeting a mind that reads
+fluency as truth. Better models will reduce the crudest forms of both, but they
+will not remove the loop, because the loop is what makes the product pleasant.
+The real counterweights are structural: separate the model from the numbers,
+make it argue against the user's premise, force it to show evidence rather than
+conclusions, keep uncertainty visible, and design interfaces that reward being
+right over being agreeable. The same fluency that makes these systems useful is
+the fluency that makes them persuasive; the defence is to stop asking the model
+to be a friend and start asking it to be a witness.
+
+*Further reading:* [OpenAI on sycophancy in GPT-4o](https://openai.com/index/sycophancy-in-gpt-4o/)
+and [what it missed](https://openai.com/index/expanding-on-sycophancy/);
+[BMJ on chatbots and delusional thinking](https://www.bmj.com/content/391/bmj.r2229.full.pdf);
+[APA Monitor on "AI psychosis"](https://www.apa.org/monitor/2026/09/ai-psychosis);
+[the critique of "AI psychosis" as a pseudo-diagnosis](https://www.sciencedirect.com/science/article/abs/pii/S0747563226001032).
